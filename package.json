@@ -1,0 +1,20 @@
+{
+  "name": "van-lang-game",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Văn Lang: Dấu Son Hồng Hoang — RTS web lấy cảm hứng từ thời đại Hùng Vương.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "phaser": "3.90.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "^7.3.8"
+  }
+}

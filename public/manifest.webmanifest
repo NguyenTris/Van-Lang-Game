@@ -1,0 +1,11 @@
+{
+  "name": "Văn Lang: Dấu Son Hồng Hoang",
+  "short_name": "Văn Lang",
+  "description": "Web RTS lấy cảm hứng từ thời đại Hùng Vương.",
+  "lang": "vi",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0b1613",
+  "theme_color": "#7c2d24",
+  "icons": [{ "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
