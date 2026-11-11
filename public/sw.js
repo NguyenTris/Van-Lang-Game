@@ -1,4 +1,4 @@
-const CACHE = 'van-lang-v1';
+const CACHE = 'van-lang-v1.1.1';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', (event) => {
