@@ -5,9 +5,11 @@ import {
   EMPTY_SAVE,
   RESOURCE_META,
   TUTORIAL_COPY,
+  type BuildingType,
   type ResourceKey,
   type Resources,
   type SavedBuilding,
+  type SavedUnit,
   type SaveState,
   type TutorialStage,
 } from '../data';
@@ -17,8 +19,8 @@ import { hideModal, showModal, showToast, text } from '../../ui';
 const WORLD_WIDTH = 2200;
 const WORLD_HEIGHT = 1400;
 
-type UnitKind = 'hero' | 'villager';
-type BuildType = 'house' | 'chief';
+type UnitKind = 'hero' | 'villager' | 'soldier';
+type BuildType = BuildingType;
 
 interface UnitModel {
   id: string;
@@ -30,6 +32,7 @@ interface UnitModel {
   container: Phaser.GameObjects.Container;
   selectionRing: Phaser.GameObjects.Ellipse;
   busy: boolean;
+  combatDamage: number;
 }
 
 interface ResourceNode {
@@ -75,6 +78,10 @@ export class GameScene extends Phaser.Scene {
   private buildings: BuildingModel[] = [];
   private selectedUnit: UnitModel | null = null;
   private boss: BossModel | null = null;
+  private tribeChief: BossModel | null = null;
+  private tribeCamp: Phaser.GameObjects.Container | null = null;
+  private tribeFog: Phaser.GameObjects.Container | null = null;
+  private productionTicks = 0;
   private placementType: BuildType | null = null;
   private placementGhost: Phaser.GameObjects.Container | null = null;
   private guideMarker: Phaser.GameObjects.Container | null = null;
@@ -100,6 +107,7 @@ export class GameScene extends Phaser.Scene {
     this.restoreBuildings();
     this.createFounders();
     this.restoreStageActors();
+    this.restoreCampaignActors();
     this.createGuideMarker();
     this.configureInput();
     this.configureHud();
@@ -111,6 +119,11 @@ export class GameScene extends Phaser.Scene {
       loop: true,
       callback: () => void this.saveGame(),
     });
+    this.time.addEvent({
+      delay: 2_000,
+      loop: true,
+      callback: () => this.tickRiceProduction(),
+    });
 
     if (this.loadedState) {
       this.controlsEnabled = true;
@@ -118,6 +131,17 @@ export class GameScene extends Phaser.Scene {
       if (this.state.tutorialStage === 'boss-warning') {
         this.state.tutorialStage = 'fight-boss';
         this.setTutorial('fight-boss', false);
+      } else if (this.state.tutorialStage === 'complete') {
+        this.controlsEnabled = false;
+        this.time.delayedCall(450, () => {
+          if (this.state.originGiftClaimed) this.beginLevelOne(true);
+          else this.showVictoryModal();
+        });
+      } else if (this.state.tutorialStage === 'level1-complete') {
+        this.controlsEnabled = false;
+        this.time.delayedCall(550, () => this.showLevelOneComplete());
+      } else if (this.state.tutorialStage === 'level2-tribe-choice') {
+        this.time.delayedCall(650, () => this.showTribeChoice());
       }
     } else {
       this.showOpeningModal();
@@ -165,11 +189,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private sanitizeState(loaded: SaveState | null): SaveState {
-    if (!loaded || loaded.version !== 1) return { ...EMPTY_SAVE, resources: { ...EMPTY_SAVE.resources }, buildings: [], savedAt: Date.now() };
+    if (!loaded || loaded.version !== 1) {
+      return { ...EMPTY_SAVE, resources: { ...EMPTY_SAVE.resources }, buildings: [], trainedUnits: [], savedAt: Date.now() };
+    }
     return {
+      ...EMPTY_SAVE,
       ...loaded,
       resources: { ...EMPTY_SAVE.resources, ...loaded.resources },
       buildings: Array.isArray(loaded.buildings) ? loaded.buildings.map((building) => ({ ...building })) : [],
+      trainedUnits: Array.isArray(loaded.trainedUnits) ? loaded.trainedUnits.map((unit) => ({ ...unit })) : [],
     };
   }
 
@@ -231,6 +259,11 @@ export class GameScene extends Phaser.Scene {
     document.querySelector<HTMLButtonElement>('#build-house')?.addEventListener('click', () => this.beginPlacement('house'));
     document.querySelector<HTMLButtonElement>('#build-chief')?.addEventListener('click', () => this.beginPlacement('chief'));
     document.querySelector<HTMLButtonElement>('#upgrade-era')?.addEventListener('click', () => this.upgradeEra());
+    document.querySelector<HTMLButtonElement>('#build-field')?.addEventListener('click', () => this.beginPlacement('rice-field'));
+    document.querySelector<HTMLButtonElement>('#call-rain')?.addEventListener('click', () => this.callRain());
+    document.querySelector<HTMLButtonElement>('#build-barracks')?.addEventListener('click', () => this.beginPlacement('barracks'));
+    document.querySelector<HTMLButtonElement>('#train-warrior')?.addEventListener('click', () => this.trainUnit('lac-quan'));
+    document.querySelector<HTMLButtonElement>('#train-archer')?.addEventListener('click', () => this.trainUnit('archer'));
     document.querySelector<HTMLButtonElement>('#sound-button')?.addEventListener('click', (event) => {
       const muted = this.gameAudio.toggle();
       (event.currentTarget as HTMLButtonElement).textContent = muted ? '×' : '♪';
@@ -444,6 +477,7 @@ export class GameScene extends Phaser.Scene {
     y: number;
     color: number;
     accent: number;
+    combatDamage?: number;
   }): UnitModel {
     const container = this.add.container(options.x, options.y).setDepth(options.y + 20);
     const shadow = this.add.ellipse(0, 15, options.kind === 'hero' ? 58 : 42, 20, 0x06150f, 0.48);
@@ -481,6 +515,7 @@ export class GameScene extends Phaser.Scene {
       container,
       selectionRing,
       busy: false,
+      combatDamage: options.combatDamage ?? (options.kind === 'hero' ? 40 : options.kind === 'soldier' ? 28 : 4),
     };
     container.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       if (pointer.leftButtonDown() && this.controlsEnabled && !this.placementType) this.selectUnit(unit);
@@ -500,6 +535,54 @@ export class GameScene extends Phaser.Scene {
     if (this.state.tutorialStage === 'boss-warning' || this.state.tutorialStage === 'fight-boss') {
       this.spawnBoss(true);
     }
+  }
+
+  private restoreCampaignActors(): void {
+    if (this.state.campaignStarted) this.createThanNong();
+    if (this.state.level >= 2) {
+      this.createLacHau();
+      this.createNeutralCamp(this.state.tutorialStage !== 'level2-train-archer');
+    }
+    this.state.trainedUnits.forEach((unit) => this.createTrainedUnit(unit));
+    if (this.state.tutorialStage === 'level1-drought') {
+      const field = this.buildings.find((building) => building.data.type === 'rice-field');
+      if (field) this.applyDroughtVisual(field);
+    }
+    if (this.state.tutorialStage === 'level2-conquest') {
+      this.createNeutralCamp(true);
+      this.spawnTribeChief();
+    }
+  }
+
+  private createThanNong(): void {
+    if (this.units.has('than-nong')) return;
+    this.createUnit({
+      id: 'than-nong', name: 'Thần Nông', role: 'TỔ NGHỀ LÚA · TƯỚNG KINH TẾ',
+      trait: 'Nông lịch: Ruộng Lúa Nước sản xuất 15 Lúa mỗi 10 giây', symbol: '農', kind: 'hero',
+      x: 1035, y: 650, color: 0x65733f, accent: 0xe0b95d, combatDamage: 18,
+    });
+  }
+
+  private createLacHau(): void {
+    if (this.units.has('lac-hau')) return;
+    this.createUnit({
+      id: 'lac-hau', name: 'Lạc Hầu', role: 'NỘI CHÍNH · SỨ GIẢ',
+      trait: 'Kết giao: giảm cống vật khi thu phục bộ lạc bằng hòa bình', symbol: '侯', kind: 'hero',
+      x: 945, y: 805, color: 0x69547a, accent: 0xd6b86d, combatDamage: 24,
+    });
+  }
+
+  private createTrainedUnit(saved: SavedUnit): UnitModel {
+    const warrior = saved.type === 'lac-quan';
+    return this.createUnit({
+      id: saved.id,
+      name: warrior ? 'Chiến binh Rìu Đồng' : 'Xạ thủ Nỏ Tre',
+      role: warrior ? 'LẠC QUÂN · CẬN CHIẾN' : 'LẠC QUÂN · TẦM XA',
+      trait: warrior ? '+20% sát thương lên công trình và thủ lĩnh bộ lạc' : 'Tên độc gây sát thương từ xa',
+      symbol: warrior ? '斧' : '➶', kind: 'soldier', x: saved.x, y: saved.y,
+      color: warrior ? 0x8a4f35 : 0x466845, accent: warrior ? 0xd18a46 : 0xc4b35b,
+      combatDamage: warrior ? 32 : 22,
+    });
   }
 
   private ensureVillagers(): void {
@@ -543,6 +626,12 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    if (this.tribeChief && Phaser.Math.Distance.Between(x, y, this.tribeChief.container.x, this.tribeChief.container.y) < 125) {
+      if (this.state.tutorialStage === 'level2-conquest' && unit.id.startsWith('lac-quan')) this.attackTribeChief(unit);
+      else showToast('Cần Chiến binh Rìu Đồng', 'Hãy dùng đội Lạc Quân vừa huấn luyện để chinh phạt.', '⚔');
+      return;
+    }
+
     if (this.boss && Phaser.Math.Distance.Between(x, y, this.boss.container.x, this.boss.container.y) < 115) {
       if (this.state.tutorialStage === 'fight-boss' && unit.id === 'lac-long-quan') this.attackBoss(unit);
       else showToast('Cần Lạc Long Quân', 'Thủy tổ có nội tại khắc chế Ngư Tinh.', '⚔');
@@ -570,7 +659,8 @@ export class GameScene extends Phaser.Scene {
       showToast('Hãy dùng Lạc Long Quân', 'Chọn Lạc Long Quân rồi ra lệnh tại cây cổ thụ.', '⌁');
       return;
     }
-    if (!['gather-rice', 'gather-wood', 'complete'].includes(stage)) {
+    const campaignGathering = this.state.level >= 1 && !['level2-conquest'].includes(stage);
+    if (!['gather-rice', 'gather-wood', 'complete'].includes(stage) && !campaignGathering) {
       showToast('Nhiệm vụ đang tiếp diễn', 'Hoàn thành hướng dẫn hiện tại trước khi khai thác tự do.', 'i');
       return;
     }
@@ -578,8 +668,8 @@ export class GameScene extends Phaser.Scene {
     unit.busy = true;
     this.moveUnit(unit, node.x - 42, node.y + 18, () => {
       this.time.delayedCall(520, () => {
-        const base = node.type === 'food' ? 10 : 10;
-        const amount = unit.id === 'au-co' && node.type === 'food' ? 15 : unit.id === 'lac-long-quan' && node.type === 'wood' ? 20 : base;
+        const base = this.state.level >= 1 ? 20 : 10;
+        const amount = unit.id === 'au-co' && node.type === 'food' ? (this.state.level >= 1 ? 30 : 15) : unit.id === 'lac-long-quan' && node.type === 'wood' ? 20 : base;
         this.addResource(node.type, amount);
         this.floatText(node.x, node.y - 55, `+${amount} ${RESOURCE_META[node.type].label}`, RESOURCE_META[node.type].color);
         this.gameAudio.chime();
@@ -613,12 +703,21 @@ export class GameScene extends Phaser.Scene {
 
   private beginPlacement(type: BuildType): void {
     if (!this.controlsEnabled || this.placementType) return;
-    const allowed = type === 'house'
-      ? this.state.tutorialStage === 'build-house' || this.state.tutorialStage === 'complete'
-      : this.state.tutorialStage === 'build-chief';
+    const stage = this.state.tutorialStage;
+    const allowed =
+      (type === 'house' && (stage === 'build-house' || stage === 'level2-complete')) ||
+      (type === 'chief' && stage === 'build-chief') ||
+      (type === 'rice-field' && stage === 'level1-build-field') ||
+      (type === 'barracks' && stage === 'level1-build-barracks');
     if (!allowed) return;
     if (!this.canAfford(BUILD_COSTS[type])) {
-      showToast('Chưa đủ tài nguyên', type === 'house' ? 'Cần 50 Gỗ để dựng Nhà Sàn.' : 'Cần 80 Đá để dựng Lều Trưởng Bản.', '!');
+      const requirements: Record<BuildType, string> = {
+        house: 'Cần 50 Gỗ để dựng Nhà Sàn.',
+        chief: 'Cần 80 Đá để dựng Lều Trưởng Bản.',
+        'rice-field': 'Cần 60 Gỗ để khai mở Ruộng Lúa Nước.',
+        barracks: 'Cần 80 Gỗ và 40 Đá để dựng Trại Lạc Quân.',
+      };
+      showToast('Chưa đủ tài nguyên', requirements[type], '!');
       return;
     }
     this.placementType = type;
@@ -652,7 +751,7 @@ export class GameScene extends Phaser.Scene {
       scaleX: 1,
       scaleY: 1,
       y: y,
-      duration: type === 'house' ? 3000 : 4200,
+      duration: type === 'house' ? 3000 : type === 'rice-field' ? 2600 : 4200,
       ease: 'Back.easeOut',
       onComplete: () => {
         this.controlsEnabled = true;
@@ -673,18 +772,52 @@ export class GameScene extends Phaser.Scene {
 
   private createBuildingVisual(type: BuildType, x: number, y: number, upgraded: boolean): Phaser.GameObjects.Container {
     const container = this.add.container(x, y);
-    const shadow = this.add.ellipse(0, 23, type === 'house' ? 130 : 168, type === 'house' ? 43 : 57, 0x081710, 0.48);
-    const platform = this.add.rectangle(0, 9, type === 'house' ? 92 : 124, type === 'house' ? 36 : 48, upgraded ? 0x815637 : 0x69462f).setStrokeStyle(2, 0x3d2b20);
-    const postLeft = this.add.rectangle(type === 'house' ? -31 : -45, 33, 7, 36, 0x4b3426);
-    const postRight = this.add.rectangle(type === 'house' ? 31 : 45, 33, 7, 36, 0x4b3426);
+
+    if (type === 'rice-field') {
+      const shadow = this.add.ellipse(0, 14, 158, 67, 0x081710, 0.38);
+      const bank = this.add.rectangle(0, 0, 145, 62, 0x73633b).setStrokeStyle(5, 0x4a432a);
+      const water = this.add.rectangle(0, -2, 130, 47, 0x668f82, 0.88).setName('field-water');
+      const seedlings: Phaser.GameObjects.GameObject[] = [];
+      for (let row = -2; row <= 2; row += 1) {
+        const line = this.add.line(0, row * 9 - 2, -58, 0, 58, 0, 0xa8bd67, 0.72).setLineWidth(2);
+        seedlings.push(line);
+        for (let column = -2; column <= 2; column += 1) {
+          seedlings.push(this.add.triangle(column * 23, row * 9 - 4, -3, 5, 0, -5, 3, 5, 0xc9b95b));
+        }
+      }
+      const label = this.add.text(0, 46, 'RUỘNG LÚA NƯỚC · +15/10s', this.nodeLabelStyle()).setOrigin(0.5);
+      container.add([shadow, bank, water, ...seedlings, label]);
+      return container;
+    }
+
+    if (type === 'barracks') {
+      const shadow = this.add.ellipse(0, 24, 174, 58, 0x081710, 0.48);
+      const yard = this.add.rectangle(0, 7, 124, 54, 0x69513a).setStrokeStyle(3, 0x382b22);
+      const posts: Phaser.GameObjects.GameObject[] = [];
+      for (let index = -3; index <= 3; index += 1) {
+        posts.push(this.add.rectangle(index * 20, -7, 7, 57, 0x5a3a28).setStrokeStyle(1, 0x2f231d));
+      }
+      const roof = this.add.polygon(0, -31, [-76, 14, -47, -23, 0, -44, 47, -23, 76, 14], 0x74402f).setStrokeStyle(3, 0xbd8149);
+      const banner = this.add.rectangle(0, -60, 19, 28, 0x8e3027).setStrokeStyle(1, 0xd4a153);
+      const spear = this.add.rectangle(0, -55, 3, 51, 0xd2aa62);
+      const label = this.add.text(0, 62, 'TRẠI LẠC QUÂN', this.nodeLabelStyle()).setOrigin(0.5);
+      container.add([shadow, yard, ...posts, roof, spear, banner, label]);
+      return container;
+    }
+
+    const house = type === 'house';
+    const shadow = this.add.ellipse(0, 23, house ? 130 : 168, house ? 43 : 57, 0x081710, 0.48);
+    const platform = this.add.rectangle(0, 9, house ? 92 : 124, house ? 36 : 48, upgraded ? 0x815637 : 0x69462f).setStrokeStyle(2, 0x3d2b20);
+    const postLeft = this.add.rectangle(house ? -31 : -45, 33, 7, 36, 0x4b3426);
+    const postRight = this.add.rectangle(house ? 31 : 45, 33, 7, 36, 0x4b3426);
     const roofColor = upgraded ? 0xb56b3c : type === 'chief' ? 0x8e4a33 : 0x76502f;
-    const roof = this.add.polygon(0, -22, type === 'house'
+    const roof = this.add.polygon(0, -22, house
       ? [-64, 16, -43, -22, 0, -42, 43, -22, 64, 16]
       : [-86, 21, -57, -30, 0, -57, 57, -30, 86, 21], roofColor).setStrokeStyle(3, upgraded ? 0xd7ac5b : 0x3d291f);
-    const roofLine = this.add.line(0, -22, type === 'house' ? -45 : -61, 7, type === 'house' ? 45 : 61, 7, 0xe0bd70, upgraded ? 0.9 : 0.45).setLineWidth(2);
-    const door = this.add.rectangle(0, 12, type === 'house' ? 18 : 25, type === 'house' ? 31 : 41, 0x2b201b);
+    const roofLine = this.add.line(0, -22, house ? -45 : -61, 7, house ? 45 : 61, 7, 0xe0bd70, upgraded ? 0.9 : 0.45).setLineWidth(2);
+    const door = this.add.rectangle(0, 12, house ? 18 : 25, house ? 31 : 41, 0x2b201b);
     const drum = type === 'chief' ? this.add.ellipse(0, 5, upgraded ? 37 : 27, upgraded ? 22 : 17, upgraded ? 0xc28a42 : 0x8c6b45).setStrokeStyle(2, 0xe1bd67) : null;
-    const label = this.add.text(0, type === 'house' ? 59 : 70, upgraded ? 'ĐỀN HÙNG · ĐỜI I' : type === 'house' ? 'NHÀ SÀN' : 'LỀU TRƯỞNG BẢN', this.nodeLabelStyle()).setOrigin(0.5);
+    const label = this.add.text(0, house ? 59 : 70, upgraded ? 'ĐỀN HÙNG · ĐỜI I' : house ? 'NHÀ SÀN' : 'LỀU TRƯỞNG BẢN', this.nodeLabelStyle()).setOrigin(0.5);
     container.add([shadow, postLeft, postRight, platform, door, roof, roofLine]);
     if (drum) container.add(drum);
     container.add(label);
@@ -709,17 +842,35 @@ export class GameScene extends Phaser.Scene {
   private handleBuildComplete(type: BuildType): void {
     this.gameAudio.drum();
     if (type === 'house') {
-      this.state.population = 4;
-      this.state.populationCap = 12;
+      this.state.population = Math.max(this.state.population, 4);
+      this.state.populationCap += this.state.populationCap < 12 ? 6 : 4;
       this.ensureVillagers();
       this.updateResourcesHud();
-      this.setTutorial('boss-warning');
-      showToast('Nhà Sàn hoàn thành', 'Hai Lạc Dân đã gia nhập xóm mới.', '⌂');
-      this.time.delayedCall(1000, () => this.spawnBoss(false));
-    } else {
+      if (this.state.level === 0) {
+        this.setTutorial('boss-warning');
+        showToast('Nhà Sàn hoàn thành', 'Hai Lạc Dân đã gia nhập xóm mới.', '⌂');
+        this.time.delayedCall(1000, () => this.spawnBoss(false));
+      } else {
+        showToast('Nhà Sàn hoàn thành', 'Giới hạn dân số đã được mở rộng.', '⌂');
+        void this.saveGame();
+      }
+      return;
+    }
+    if (type === 'chief') {
       this.setTutorial('upgrade');
       showToast('Lều Trưởng Bản hoàn thành', 'Đã sẵn sàng tiến vào đời Hùng Quốc Vương.', '♜');
+      return;
     }
+    if (type === 'rice-field') {
+      const field = this.buildings.filter((building) => building.data.type === 'rice-field').at(-1);
+      if (field) this.applyDroughtVisual(field);
+      this.cameras.main.shake(420, 0.004);
+      this.setTutorial('level1-drought');
+      showToast('Hạn hán ập tới!', 'Ruộng vừa khai mở đã khô cạn. Hãy gọi Thần Nông.', '☀');
+      return;
+    }
+    this.setTutorial('level1-train-warrior');
+    showToast('Trại Lạc Quân hoàn thành', 'Có thể huấn luyện Chiến binh Rìu Đồng.', '⚑');
   }
 
   private spawnBoss(restored: boolean): void {
@@ -851,13 +1002,340 @@ export class GameScene extends Phaser.Scene {
               showToast('Món quà khởi nguyên', '+500 Vàng đã được đưa vào kho.', '✦');
             }
             hideModal();
-            this.controlsEnabled = true;
             this.cameras.main.zoomTo(0.92, 850);
-            this.setTutorial('complete');
-            void this.saveGame();
+            this.time.delayedCall(260, () => this.beginLevelOne(true));
           },
         },
       ],
+    });
+  }
+
+  private beginLevelOne(showIntro: boolean): void {
+    if (!this.state.campaignStarted) {
+      this.state.campaignStarted = true;
+      this.state.resources.food += 60;
+      this.state.resources.wood += 120;
+      this.state.resources.stone += 80;
+      this.state.resources.bronze += 40;
+      this.updateResourcesHud();
+    }
+    this.createThanNong();
+    this.setTutorial('level1-build-field');
+    this.controlsEnabled = !showIntro;
+    if (!showIntro) return;
+
+    showModal({
+      eyebrow: 'ĐỜI I · HÙNG QUỐC VƯƠNG',
+      title: 'Nền nông nghiệp đầu tiên',
+      seal: 'Ⅰ',
+      body: '<p>Thần Nông mang tới giống lúa và nông lịch. Hãy biến vùng đất ven sông thành <strong>Ruộng Lúa Nước</strong>, nguồn sống bền vững cho người Lạc Việt.</p><div class="unlock"><span>VẬT TƯ · 60 LÚA</span><span>120 GỖ · 80 ĐÁ · 40 ĐỒNG</span></div>',
+      actions: [{
+        label: 'Khai mở ruộng nước',
+        onClick: () => {
+          hideModal();
+          this.controlsEnabled = true;
+          this.gameAudio.chime();
+        },
+      }],
+    });
+  }
+
+  private applyDroughtVisual(field: BuildingModel): void {
+    if (field.container.getByName('drought-overlay')) return;
+    this.state.droughtResolved = false;
+    const water = field.container.getByName('field-water') as Phaser.GameObjects.Rectangle | null;
+    water?.setFillStyle(0x8b6d43, 0.9);
+    const overlay = this.add.rectangle(0, -2, 132, 49, 0x9b6335, 0.42).setName('drought-overlay');
+    const cracks = this.add.text(0, -2, '╱  ╲  ╱  ╲', {
+      fontFamily: 'Georgia, serif', fontSize: '19px', color: '#583b28',
+    }).setOrigin(0.5).setName('drought-cracks');
+    field.container.add([overlay, cracks]);
+  }
+
+  private callRain(): void {
+    if (this.state.tutorialStage !== 'level1-drought') return;
+    const field = this.buildings.find((building) => building.data.type === 'rice-field');
+    if (!field) return;
+    this.controlsEnabled = false;
+    this.gameAudio.drum();
+    for (let index = 0; index < 28; index += 1) {
+      const rain = this.add.line(field.data.x - 90 + (index % 14) * 14, field.data.y - 130 - Math.floor(index / 14) * 50, 0, 0, -8, 28, 0x8ed4dc, 0.8)
+        .setLineWidth(2).setDepth(field.data.y + 150);
+      this.tweens.add({
+        targets: rain, y: field.data.y + 40, alpha: 0, duration: 620 + (index % 5) * 85,
+        delay: (index % 7) * 40, onComplete: () => rain.destroy(),
+      });
+    }
+    this.time.delayedCall(900, () => {
+      field.container.getByName('drought-overlay')?.destroy();
+      field.container.getByName('drought-cracks')?.destroy();
+      const water = field.container.getByName('field-water') as Phaser.GameObjects.Rectangle | null;
+      water?.setFillStyle(0x668f82, 0.9);
+      this.state.droughtResolved = true;
+      this.controlsEnabled = true;
+      this.setTutorial('level1-build-barracks');
+      showToast('Mưa lành đã tới', 'Ruộng hoạt động trở lại: +15 Lúa mỗi 10 giây.', '☂');
+      this.gameAudio.chime();
+    });
+  }
+
+  private tickRiceProduction(): void {
+    if (!this.state.droughtResolved || !this.buildings.some((building) => building.data.type === 'rice-field')) return;
+    this.state.resources.food += 3;
+    this.productionTicks += 1;
+    this.updateResourcesHud();
+    if (this.productionTicks % 5 === 0) {
+      const field = this.buildings.find((building) => building.data.type === 'rice-field');
+      if (field) this.floatText(field.data.x, field.data.y - 70, '+15 Lúa / 10s', RESOURCE_META.food.color);
+      void this.saveGame();
+    }
+  }
+
+  private trainUnit(type: SavedUnit['type']): void {
+    const warrior = type === 'lac-quan';
+    const expectedStage = warrior ? 'level1-train-warrior' : 'level2-train-archer';
+    if (this.state.tutorialStage !== expectedStage || !this.controlsEnabled) return;
+    const cost = warrior ? BUILD_COSTS.warrior : BUILD_COSTS.archer;
+    if (!this.canAfford(cost)) {
+      showToast('Chưa đủ tài nguyên', warrior ? 'Cần 60 Lúa và 20 Đồng.' : 'Cần 40 Lúa và 40 Gỗ.', '!');
+      return;
+    }
+    const barracks = this.buildings.find((building) => building.data.type === 'barracks');
+    if (!barracks) return;
+    this.spendResources(cost);
+    this.controlsEnabled = false;
+    showToast('Đang huấn luyện', warrior ? 'Chiến binh Rìu Đồng sắp xuất trận.' : 'Xạ thủ đang thử dây nỏ tre.', '⚑');
+    this.time.delayedCall(2200, () => {
+      const saved: SavedUnit = {
+        id: `${type}-${Date.now()}`,
+        type,
+        x: barracks.data.x + (warrior ? -58 : 58),
+        y: barracks.data.y + 72,
+      };
+      this.state.trainedUnits.push(saved);
+      const unit = this.createTrainedUnit(saved);
+      this.state.population += 1;
+      this.updateResourcesHud();
+      this.selectUnit(unit);
+      this.controlsEnabled = true;
+      this.gameAudio.drum();
+      if (warrior) {
+        this.setTutorial('level1-complete');
+        this.time.delayedCall(450, () => this.showLevelOneComplete());
+      } else {
+        this.setTutorial('level2-tribe-choice');
+        this.revealNeutralCamp();
+        this.time.delayedCall(1150, () => this.showTribeChoice());
+      }
+    });
+  }
+
+  private showLevelOneComplete(): void {
+    this.controlsEnabled = false;
+    showModal({
+      eyebrow: 'HOÀN THÀNH ĐỜI I',
+      title: 'Mùa vàng bên sông Hồng',
+      seal: 'Ⅰ',
+      body: '<p>Hạn hán đã qua. Ruộng nước và đội Lạc Quân tạo nên nền móng để Văn Lang tiến ra ngoài xóm làng đầu tiên.</p><div class="unlock"><span>MỞ KHÓA · LẠC HẦU</span><span>XẠ THỦ NỎ TRE</span></div>',
+      actions: [{
+        label: 'Tiến vào đời II',
+        onClick: () => {
+          hideModal();
+          this.beginLevelTwo();
+        },
+      }],
+    });
+  }
+
+  private beginLevelTwo(): void {
+    this.state.level = 2;
+    this.state.resources.food += 120;
+    this.state.resources.wood += 100;
+    this.createLacHau();
+    this.createNeutralCamp(false);
+    this.setTutorial('level2-train-archer');
+    this.updateResourcesHud();
+    this.controlsEnabled = false;
+    showModal({
+      eyebrow: 'ĐỜI II · HÙNG HY VƯƠNG',
+      title: 'Mở rộng bờ cõi',
+      seal: 'Ⅱ',
+      body: '<p>Lạc Hầu báo tin có khói bếp sau màn sương phía tây. Hãy lập một đội <strong>Xạ thủ Nỏ Tre</strong> trước khi thám sát bộ lạc lân cận.</p><div class="unlock"><span>VIỆN TRỢ · 120 LÚA</span><span>100 GỖ</span></div>',
+      actions: [{
+        label: 'Chuẩn bị thám sát',
+        onClick: () => {
+          hideModal();
+          this.controlsEnabled = true;
+          void this.saveGame();
+        },
+      }],
+    });
+  }
+
+  private createNeutralCamp(revealed: boolean): void {
+    if (this.tribeCamp) {
+      if (revealed) this.revealNeutralCamp(false);
+      return;
+    }
+    const x = 430;
+    const y = 390;
+    const container = this.add.container(x, y).setDepth(y + 2);
+    const shadow = this.add.ellipse(0, 30, 210, 80, 0x07140f, 0.48);
+    const fire = this.add.circle(0, 20, 12, 0xe8923f);
+    const fireCore = this.add.circle(0, 22, 5, 0xffd26a);
+    const tentLeft = this.add.polygon(-58, 0, [-50, 35, 0, -37, 50, 35], 0x795039).setStrokeStyle(3, 0x3d2d24);
+    const tentRight = this.add.polygon(67, 6, [-39, 28, 0, -30, 39, 28], 0x654936).setStrokeStyle(3, 0x34271f);
+    const flagPole = this.add.rectangle(-98, -21, 4, 82, 0x9c7647);
+    const flag = this.add.triangle(-79, -52, -19, -13, 22, 0, -19, 13, 0x8e3027);
+    const label = this.add.text(0, 66, 'BỘ LẠC VŨ NINH · TRUNG LẬP', this.nodeLabelStyle()).setOrigin(0.5);
+    container.add([shadow, tentLeft, tentRight, fire, fireCore, flagPole, flag, label]);
+    this.tweens.add({ targets: fire, scale: 1.22, alpha: 0.64, duration: 420, yoyo: true, repeat: -1 });
+    this.tribeCamp = container;
+
+    const fogChildren: Phaser.GameObjects.GameObject[] = [];
+    for (let row = -2; row <= 2; row += 1) {
+      for (let column = -2; column <= 2; column += 1) {
+        fogChildren.push(this.add.circle(column * 58, row * 42, 78, 0x0a1714, 0.91));
+      }
+    }
+    const fogLabel = this.add.text(0, 0, 'VÙNG CHƯA KHÁM PHÁ', {
+      fontFamily: 'Arial, sans-serif', fontSize: '9px', fontStyle: 'bold', color: '#708078', letterSpacing: 2,
+    }).setOrigin(0.5);
+    fogChildren.push(fogLabel);
+    this.tribeFog = this.add.container(x, y, fogChildren).setDepth(y + 180);
+    if (revealed) this.tribeFog.setVisible(false);
+  }
+
+  private revealNeutralCamp(animate = true): void {
+    this.createNeutralCamp(false);
+    if (!this.tribeFog) return;
+    this.cameras.main.pan(470, 430, animate ? 950 : 0, 'Sine.easeInOut');
+    if (animate) {
+      this.tweens.add({
+        targets: this.tribeFog, alpha: 0, scaleX: 1.25, scaleY: 1.25, duration: 1050,
+        onComplete: () => this.tribeFog?.setVisible(false),
+      });
+      showToast('Đã khám phá Vũ Ninh', 'Một bộ lạc trung lập xuất hiện sau màn sương.', '⌖');
+    } else {
+      this.tribeFog.setVisible(false);
+    }
+  }
+
+  private showTribeChoice(): void {
+    if (this.state.tutorialStage !== 'level2-tribe-choice') return;
+    this.controlsEnabled = false;
+    showModal({
+      eyebrow: 'QUYẾT SÁCH · BỘ LẠC VŨ NINH',
+      title: 'Kết giao hay chinh phạt?',
+      seal: '◇',
+      body: '<p><strong>Kết minh</strong> tốn 50 Lúa và 50 Vàng, đổi lại Vũ Ninh cống nạp Đồng. <strong>Chinh phạt</strong> cần Lạc Quân đánh bại thủ lĩnh, đổi lại chiến lợi phẩm lớn hơn.</p>',
+      actions: [
+        {
+          label: 'Kết minh · 50 Lúa + 50 Vàng',
+          kind: 'secondary',
+          onClick: () => {
+            this.spendResources(BUILD_COSTS.diplomacy);
+            this.state.tribeOutcome = 'diplomacy';
+            hideModal();
+            this.finishLevelTwo('diplomacy');
+          },
+        },
+        {
+          label: 'Chọn chinh phạt',
+          onClick: () => {
+            hideModal();
+            this.controlsEnabled = true;
+            this.setTutorial('level2-conquest');
+            this.spawnTribeChief();
+          },
+        },
+      ],
+    });
+  }
+
+  private spawnTribeChief(): void {
+    if (this.tribeChief) return;
+    this.revealNeutralCamp(false);
+    const x = 565;
+    const y = 440;
+    const container = this.add.container(x, y).setDepth(y + 60);
+    const shadow = this.add.ellipse(0, 19, 70, 25, 0x07140f, 0.5);
+    const legs = this.add.rectangle(0, 5, 22, 36, 0x382821);
+    const body = this.add.ellipse(0, -20, 44, 56, 0x6f3430).setStrokeStyle(3, 0xd1a354);
+    const head = this.add.circle(0, -57, 16, 0xb87959).setStrokeStyle(2, 0x3d271f);
+    const plume = this.add.triangle(0, -88, -17, 22, 0, -14, 17, 22, 0xd0a050);
+    const spear = this.add.rectangle(29, -18, 5, 92, 0xb58b54).setRotation(-0.13);
+    const healthBack = this.add.rectangle(0, -106, 116, 8, 0x281c19).setStrokeStyle(1, 0xd4bd8a, 0.45);
+    const healthFill = this.add.rectangle(-57, -106, 112, 5, 0xb74436).setOrigin(0, 0.5);
+    const label = this.add.text(0, -125, 'THỦ LĨNH VŨ NINH', {
+      fontFamily: 'Arial, sans-serif', fontSize: '9px', fontStyle: 'bold', color: '#efc9a9', backgroundColor: '#421f1ccc', padding: { x: 6, y: 3 },
+    }).setOrigin(0.5);
+    container.add([shadow, legs, spear, body, head, plume, healthBack, healthFill, label]);
+    this.tribeChief = { container, health: 160, maxHealth: 160, healthFill, attacking: false };
+    document.body.classList.add('boss-active');
+    this.cameras.main.shake(330, 0.004);
+    this.updateGuide();
+  }
+
+  private attackTribeChief(unit: UnitModel): void {
+    const chief = this.tribeChief;
+    if (!chief || chief.attacking) return;
+    chief.attacking = true;
+    unit.busy = true;
+    this.moveUnit(unit, chief.container.x - 72, chief.container.y + 24, () => {
+      const hits = Math.ceil(chief.maxHealth / unit.combatDamage);
+      for (let index = 0; index < hits; index += 1) {
+        this.time.delayedCall(index * 520, () => {
+          if (!this.tribeChief) return;
+          this.gameAudio.hit(165 - index * 5);
+          this.tribeChief.health = Math.max(0, this.tribeChief.health - unit.combatDamage);
+          this.tribeChief.healthFill.setScale(this.tribeChief.health / this.tribeChief.maxHealth, 1);
+          this.tribeChief.container.setScale(1.05);
+          this.time.delayedCall(90, () => this.tribeChief?.container.setScale(1));
+          this.floatText(chief.container.x, chief.container.y - 132, `-${unit.combatDamage}`, '#ef795d');
+          if (this.tribeChief.health <= 0) this.defeatTribeChief(unit);
+        });
+      }
+    });
+  }
+
+  private defeatTribeChief(unit: UnitModel): void {
+    const chief = this.tribeChief;
+    if (!chief) return;
+    this.tribeChief = null;
+    unit.busy = false;
+    document.body.classList.remove('boss-active');
+    this.tweens.add({ targets: chief.container, alpha: 0, y: chief.container.y + 20, duration: 600, onComplete: () => chief.container.destroy(true) });
+    this.state.tribeOutcome = 'conquest';
+    this.finishLevelTwo('conquest');
+  }
+
+  private finishLevelTwo(outcome: 'diplomacy' | 'conquest'): void {
+    if (outcome === 'diplomacy') {
+      this.state.resources.bronze += 80;
+    } else {
+      this.state.resources.gold += 150;
+      this.state.resources.bronze += 40;
+    }
+    this.setTutorial('level2-complete');
+    this.updateResourcesHud();
+    this.controlsEnabled = false;
+    const title = outcome === 'diplomacy' ? 'Vũ Ninh nguyện kết minh' : 'Vũ Ninh đã quy phục';
+    const reward = outcome === 'diplomacy' ? '+80 Đồng cống nạp' : '+150 Vàng · +40 Đồng chiến lợi phẩm';
+    showModal({
+      eyebrow: 'HOÀN THÀNH ĐỜI II · HÙNG HY VƯƠNG',
+      title,
+      seal: 'Ⅱ',
+      body: `<p>Bộ lạc Vũ Ninh trở thành chư hầu đầu tiên. Bờ cõi Văn Lang đã vượt ra ngoài xóm làng khởi nguyên.</p><div class="unlock"><span>${reward}</span><span>DANH HIỆU · NGƯỜI MỞ CÕI</span></div>`,
+      actions: [{
+        label: 'Tiếp tục xây dựng',
+        onClick: () => {
+          hideModal();
+          this.controlsEnabled = true;
+          this.cameras.main.pan(930, 700, 900, 'Sine.easeInOut');
+          void this.saveGame();
+        },
+      }],
     });
   }
 
@@ -916,7 +1394,7 @@ export class GameScene extends Phaser.Scene {
     text('#tutorial-title', copy.title);
     text('#tutorial-body', copy.body);
     text('#tutorial-hint', copy.hint);
-    const percent = stage === 'complete' ? 100 : Math.round((copy.step / 8) * 100);
+    const percent = Math.round((copy.step / (copy.total ?? 8)) * 100);
     text('#tutorial-percent', `${percent}%`);
     const tutorialBar = document.querySelector<HTMLElement>('#tutorial-bar');
     if (tutorialBar) tutorialBar.style.width = `${percent}%`;
@@ -938,7 +1416,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateEraHud(): void {
-    if (this.state.level >= 1) {
+    if (this.state.level >= 2) {
+      text('#era-kicker', 'ĐỜI THỨ II · HÙNG HY VƯƠNG');
+      text('#era-title', this.state.tutorialStage === 'level2-complete' ? 'Chư hầu Vũ Ninh' : 'Mở rộng bờ cõi');
+    } else if (this.state.level >= 1) {
       text('#era-kicker', 'ĐỜI THỨ I · HÙNG QUỐC VƯƠNG');
       text('#era-title', 'Nền móng nước Văn Lang');
     } else {
@@ -947,23 +1428,37 @@ export class GameScene extends Phaser.Scene {
     }
     const copy = TUTORIAL_COPY[this.state.tutorialStage];
     const progress = document.querySelector<HTMLElement>('#era-progress');
-    if (progress) progress.style.width = `${this.state.tutorialStage === 'complete' ? 100 : Math.max(3, (copy.step / 8) * 100)}%`;
+    if (progress) progress.style.width = `${Math.max(3, (copy.step / (copy.total ?? 8)) * 100)}%`;
   }
 
   private syncActionButtons(): void {
     const stage = this.state.tutorialStage;
-    const house = document.querySelector<HTMLButtonElement>('#build-house');
-    const chief = document.querySelector<HTMLButtonElement>('#build-chief');
-    const upgrade = document.querySelector<HTMLButtonElement>('#upgrade-era');
-    if (house) house.disabled = !((stage === 'build-house' || stage === 'complete') && this.canAfford(BUILD_COSTS.house));
-    if (chief) chief.disabled = !(stage === 'build-chief' && this.canAfford(BUILD_COSTS.chief));
-    if (upgrade) upgrade.disabled = !(stage === 'upgrade' && this.canAfford(BUILD_COSTS.upgrade));
+    const campaign = this.state.campaignStarted;
+    const grid = document.querySelector('.action-grid');
+    grid?.classList.toggle('is-campaign', campaign);
+    text('#action-context', campaign ? (this.state.level >= 2 ? 'ĐỜI II · QUÂN SỰ' : 'ĐỜI I · NÔNG NGHIỆP') : 'XÂY DỰNG');
+
+    const configure = (selector: string, visible: boolean, enabled: boolean): void => {
+      const button = document.querySelector<HTMLButtonElement>(selector);
+      if (!button) return;
+      button.hidden = !visible;
+      button.disabled = !enabled;
+    };
+
+    configure('#build-house', !campaign || stage === 'level2-complete', (stage === 'build-house' || stage === 'level2-complete') && this.canAfford(BUILD_COSTS.house));
+    configure('#build-chief', !campaign, stage === 'build-chief' && this.canAfford(BUILD_COSTS.chief));
+    configure('#upgrade-era', !campaign, stage === 'upgrade' && this.canAfford(BUILD_COSTS.upgrade));
+    configure('#build-field', stage === 'level1-build-field', stage === 'level1-build-field' && this.canAfford(BUILD_COSTS['rice-field']));
+    configure('#call-rain', stage === 'level1-drought', stage === 'level1-drought');
+    configure('#build-barracks', stage === 'level1-build-barracks', stage === 'level1-build-barracks' && this.canAfford(BUILD_COSTS.barracks));
+    configure('#train-warrior', stage === 'level1-train-warrior', stage === 'level1-train-warrior' && this.canAfford(BUILD_COSTS.warrior));
+    configure('#train-archer', stage === 'level2-train-archer', stage === 'level2-train-archer' && this.canAfford(BUILD_COSTS.archer));
   }
 
-  private addResource(key: ResourceKey, amount: number): void {
+  private addResource(key: ResourceKey, amount: number, persist = true): void {
     this.state.resources[key] += amount;
     this.updateResourcesHud();
-    void this.saveGame();
+    if (persist) void this.saveGame();
   }
 
   private canAfford(cost: Partial<Resources> | Readonly<Partial<Resources>>): boolean {
@@ -1009,6 +1504,11 @@ export class GameScene extends Phaser.Scene {
       target = this.selectedUnit?.id === 'lac-long-quan' ? this.resourceNodes.find((node) => node.type === 'wood') ?? null : this.units.get('lac-long-quan')?.container ?? null;
     }
     if (stage === 'fight-boss') target = this.selectedUnit?.id === 'lac-long-quan' ? this.boss?.container ?? null : this.units.get('lac-long-quan')?.container ?? null;
+    if (stage === 'level1-drought') target = this.units.get('than-nong')?.container ?? null;
+    if (stage === 'level2-conquest') {
+      const warrior = [...this.units.values()].find((unit) => unit.id.startsWith('lac-quan'));
+      target = this.selectedUnit?.id.startsWith('lac-quan') ? this.tribeChief?.container ?? null : warrior?.container ?? null;
+    }
     this.guideMarker.setVisible(Boolean(target));
     if (target) this.guideMarker.setPosition(target.x, target.y - 4);
   }
@@ -1021,6 +1521,7 @@ export class GameScene extends Phaser.Scene {
       savedAt: Date.now(),
       resources: { ...this.state.resources },
       buildings: this.state.buildings.map((building) => ({ ...building })),
+      trainedUnits: this.state.trainedUnits.map((unit) => ({ ...unit })),
     };
     await this.saveManager.save(snapshot);
     this.state.savedAt = snapshot.savedAt;

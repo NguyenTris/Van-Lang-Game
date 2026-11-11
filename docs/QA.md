@@ -23,7 +23,13 @@ Kỳ vọng: tất cả lệnh exit code 0, output có `dist/index.html`.
 8. Xác nhận kho có 100 Đá, 100 Đồng.
 9. Xây Lều Trưởng Bản bằng 80 Đá.
 10. Nhấn Lên đời; kiểm tra animation, Đền Hùng và modal Hùng Quốc Vương.
-11. Nhận 500 Vàng; F5 và kiểm tra level/công trình/tài nguyên còn nguyên.
+11. Nhận 500 Vàng; bước vào Level 1 và xác nhận nhận Thần Nông cùng vật tư khởi nghiệp.
+12. Xây Ruộng Lúa; hạn hán phải làm ruộng đổi màu và dừng sản xuất.
+13. Dùng Gọi Mưa; kiểm tra ruộng cộng đúng 3 Lúa/2 giây và hiện +15 sau 10 giây.
+14. Thu thêm Gỗ, dựng Trại Lạc Quân và huấn luyện Chiến binh Rìu Đồng.
+15. Sang Level 2, huấn luyện Xạ thủ; fog tại Vũ Ninh phải tan.
+16. Chọn một trong hai nhánh: kết minh trừ đúng cống vật hoặc chinh phạt bằng Lạc Quân.
+17. F5 và kiểm tra level, công trình, quân đã huấn luyện, lựa chọn bộ lạc và tài nguyên còn nguyên.
 
 ## Edge cases
 
