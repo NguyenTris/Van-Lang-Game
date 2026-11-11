@@ -41,6 +41,8 @@ Bản MVP hiện thực hóa trọn vẹn tutorial mở đầu trong hồ sơ d�
 | Chọn nhân vật | Chuột trái |
 | Di chuyển / khai thác / tấn công | Chuột phải |
 | Xây Nhà Sàn / Lều / Lên đời | `1` / `2` / `3` hoặc nút HUD |
+| Mở bảng huấn luyện | Nhấp chuột trái vào Trại Lạc Quân |
+| Huấn luyện binh lính | Chọn Rìu Đồng hoặc Nỏ Tre trong bảng hành động |
 | Hủy đặt công trình | `Esc` hoặc chuột phải |
 | Toàn màn hình / âm thanh | Nút góc trên phải |
 

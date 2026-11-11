@@ -45,6 +45,7 @@ interface ResourceNode {
 interface BuildingModel {
   data: SavedBuilding;
   container: Phaser.GameObjects.Container;
+  selectionRing: Phaser.GameObjects.Ellipse;
 }
 
 interface BossModel {
@@ -77,6 +78,7 @@ export class GameScene extends Phaser.Scene {
   private resourceNodes: ResourceNode[] = [];
   private buildings: BuildingModel[] = [];
   private selectedUnit: UnitModel | null = null;
+  private selectedBuilding: BuildingModel | null = null;
   private boss: BossModel | null = null;
   private tribeChief: BossModel | null = null;
   private tribeCamp: Phaser.GameObjects.Container | null = null;
@@ -598,7 +600,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private selectUnit(unit: UnitModel): void {
-    if (this.selectedUnit === unit) return;
+    if (this.selectedUnit === unit && !this.selectedBuilding) return;
+    this.selectedBuilding?.selectionRing.setVisible(false);
+    this.selectedBuilding = null;
     this.selectedUnit?.selectionRing.setVisible(false);
     this.selectedUnit = unit;
     unit.selectionRing.setVisible(true);
@@ -616,7 +620,42 @@ export class GameScene extends Phaser.Scene {
       this.setTutorial('gather-rice');
       showToast('Đã chọn Âu Cơ', 'Nhấp chuột phải vào bụi lúa để ra lệnh thu hoạch.', '◒');
     }
+    this.syncActionButtons();
     this.updateGuide();
+  }
+
+  private selectBuilding(building: BuildingModel): void {
+    if (this.selectedBuilding === building) {
+      this.syncActionButtons();
+      return;
+    }
+    this.selectedUnit?.selectionRing.setVisible(false);
+    this.selectedUnit = null;
+    this.selectedBuilding?.selectionRing.setVisible(false);
+    this.selectedBuilding = building;
+    building.selectionRing.setVisible(true);
+    this.gameAudio.hit(285);
+
+    const buildingCopy: Record<BuildType, { role: string; name: string; trait: string; symbol: string }> = {
+      house: { role: 'CÔNG TRÌNH DÂN SỰ', name: 'Nhà Sàn', trait: 'Tăng giới hạn dân số và chống ngập', symbol: '⌂' },
+      chief: { role: 'TRUNG TÂM VĂN LANG', name: building.data.upgraded ? 'Đền Hùng' : 'Lều Trưởng Bản', trait: 'Trung tâm quyền lực và nơi tiến lên đời mới', symbol: '♜' },
+      'rice-field': { role: 'CÔNG TRÌNH KINH TẾ', name: 'Ruộng Lúa Nước', trait: this.state.droughtResolved ? 'Đang sản xuất 15 Lúa mỗi 10 giây' : 'Đang ngừng sản xuất vì hạn hán', symbol: '≋' },
+      barracks: { role: 'CÔNG TRÌNH QUÂN SỰ', name: 'Trại Lạc Quân', trait: 'Mở bảng huấn luyện binh lính Văn Lang', symbol: '⚑' },
+    };
+    const copy = buildingCopy[building.data.type];
+    document.querySelector('#selection-panel')?.classList.remove('is-empty');
+    text('#selection-role', copy.role);
+    text('#selection-name', copy.name);
+    text('#selection-trait', copy.trait);
+    text('#selection-portrait span', copy.symbol);
+    const portrait = document.querySelector<HTMLElement>('#selection-portrait');
+    if (portrait) portrait.style.background = 'radial-gradient(circle at 50% 30%, #8c673d, #273c30 68%)';
+
+    this.syncActionButtons();
+    this.updateGuide();
+    if (building.data.type === 'barracks' && ['level1-train-warrior', 'level2-train-archer'].includes(this.state.tutorialStage)) {
+      showToast('Đã mở Trại Lạc Quân', 'Chọn loại binh muốn huấn luyện ở bảng hành động.', '⚑');
+    }
   }
 
   private handleWorldCommand(x: number, y: number): void {
@@ -763,8 +802,23 @@ export class GameScene extends Phaser.Scene {
   private createBuilding(data: SavedBuilding, constructing: boolean): BuildingModel {
     const container = this.createBuildingVisual(data.type, data.x, data.y, Boolean(data.upgraded));
     container.setDepth(data.y + 5);
+    const selectionWidth = data.type === 'rice-field' ? 174 : data.type === 'barracks' ? 190 : data.type === 'chief' ? 182 : 142;
+    const selectionRing = this.add.ellipse(0, 22, selectionWidth, data.type === 'barracks' ? 76 : 61).setStrokeStyle(3, 0xe2c467, 0.95);
+    selectionRing.setVisible(false);
+    container.addAt(selectionRing, 0);
+    const hitHeight = data.type === 'barracks' ? 145 : data.type === 'rice-field' ? 95 : 130;
+    container.setSize(selectionWidth, hitHeight).setInteractive({ useHandCursor: true });
     if (constructing) container.setAlpha(0.25).setScale(0.72).setY(data.y + 24);
-    const building = { data, container };
+    const building: BuildingModel = { data, container, selectionRing };
+    container.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (pointer.leftButtonDown() && this.controlsEnabled && !this.placementType) this.selectBuilding(building);
+    });
+    container.on('pointerover', () => {
+      if (this.controlsEnabled && !this.placementType) container.setScale(1.025);
+    });
+    container.on('pointerout', () => {
+      if (!constructing || this.controlsEnabled) container.setScale(1);
+    });
     this.buildings.push(building);
     if (!this.state.buildings.some((saved) => saved.id === data.id)) this.state.buildings.push(data);
     return building;
@@ -870,7 +924,9 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.setTutorial('level1-train-warrior');
-    showToast('Trại Lạc Quân hoàn thành', 'Có thể huấn luyện Chiến binh Rìu Đồng.', '⚑');
+    const barracks = this.buildings.filter((building) => building.data.type === 'barracks').at(-1);
+    if (barracks) this.selectBuilding(barracks);
+    showToast('Trại Lạc Quân hoàn thành', 'Trại đã mở. Chọn Chiến binh Rìu Đồng để huấn luyện.', '⚑');
   }
 
   private spawnBoss(restored: boolean): void {
@@ -1093,17 +1149,27 @@ export class GameScene extends Phaser.Scene {
 
   private trainUnit(type: SavedUnit['type']): void {
     const warrior = type === 'lac-quan';
-    const expectedStage = warrior ? 'level1-train-warrior' : 'level2-train-archer';
-    if (this.state.tutorialStage !== expectedStage || !this.controlsEnabled) return;
+    const stage = this.state.tutorialStage;
+    const barracks = this.selectedBuilding?.data.type === 'barracks' ? this.selectedBuilding : null;
+    const stageAllowsTraining = ['level1-train-warrior', 'level2-train-archer', 'level2-complete'].includes(stage);
+    const unitUnlocked = warrior ? this.state.level >= 1 : this.state.level >= 2;
+    if (!this.controlsEnabled || !barracks || !stageAllowsTraining || !unitUnlocked) {
+      showToast('Hãy mở Trại Lạc Quân', 'Nhấp chuột trái vào Trại Lạc Quân để mở bảng huấn luyện.', '⚑');
+      return;
+    }
+    if (this.state.population >= this.state.populationCap) {
+      showToast('Đã đạt giới hạn dân số', 'Hãy xây thêm Nhà Sàn trước khi huấn luyện binh lính.', '!');
+      return;
+    }
     const cost = warrior ? BUILD_COSTS.warrior : BUILD_COSTS.archer;
     if (!this.canAfford(cost)) {
       showToast('Chưa đủ tài nguyên', warrior ? 'Cần 60 Lúa và 20 Đồng.' : 'Cần 40 Lúa và 40 Gỗ.', '!');
       return;
     }
-    const barracks = this.buildings.find((building) => building.data.type === 'barracks');
-    if (!barracks) return;
+    const progressesQuest = (warrior && stage === 'level1-train-warrior') || (!warrior && stage === 'level2-train-archer');
     this.spendResources(cost);
     this.controlsEnabled = false;
+    this.syncActionButtons();
     showToast('Đang huấn luyện', warrior ? 'Chiến binh Rìu Đồng sắp xuất trận.' : 'Xạ thủ đang thử dây nỏ tre.', '⚑');
     this.time.delayedCall(2200, () => {
       const saved: SavedUnit = {
@@ -1115,10 +1181,15 @@ export class GameScene extends Phaser.Scene {
       this.state.trainedUnits.push(saved);
       const unit = this.createTrainedUnit(saved);
       this.state.population += 1;
+      this.controlsEnabled = true;
       this.updateResourcesHud();
       this.selectUnit(unit);
-      this.controlsEnabled = true;
       this.gameAudio.drum();
+      if (!progressesQuest) {
+        showToast('Huấn luyện hoàn tất', `${unit.name} đã gia nhập đội quân.`, warrior ? '⚔' : '➶');
+        void this.saveGame();
+        return;
+      }
       if (warrior) {
         this.setTutorial('level1-complete');
         this.time.delayedCall(450, () => this.showLevelOneComplete());
@@ -1436,7 +1507,8 @@ export class GameScene extends Phaser.Scene {
     const campaign = this.state.campaignStarted;
     const grid = document.querySelector('.action-grid');
     grid?.classList.toggle('is-campaign', campaign);
-    text('#action-context', campaign ? (this.state.level >= 2 ? 'ĐỜI II · QUÂN SỰ' : 'ĐỜI I · NÔNG NGHIỆP') : 'XÂY DỰNG');
+    const barracksOpen = this.selectedBuilding?.data.type === 'barracks';
+    text('#action-context', barracksOpen ? 'TRẠI LẠC QUÂN' : campaign ? (this.state.level >= 2 ? 'ĐỜI II · QUÂN SỰ' : 'ĐỜI I · NÔNG NGHIỆP') : 'XÂY DỰNG');
 
     const configure = (selector: string, visible: boolean, enabled: boolean): void => {
       const button = document.querySelector<HTMLButtonElement>(selector);
@@ -1451,8 +1523,9 @@ export class GameScene extends Phaser.Scene {
     configure('#build-field', stage === 'level1-build-field', stage === 'level1-build-field' && this.canAfford(BUILD_COSTS['rice-field']));
     configure('#call-rain', stage === 'level1-drought', stage === 'level1-drought');
     configure('#build-barracks', stage === 'level1-build-barracks', stage === 'level1-build-barracks' && this.canAfford(BUILD_COSTS.barracks));
-    configure('#train-warrior', stage === 'level1-train-warrior', stage === 'level1-train-warrior' && this.canAfford(BUILD_COSTS.warrior));
-    configure('#train-archer', stage === 'level2-train-archer', stage === 'level2-train-archer' && this.canAfford(BUILD_COSTS.archer));
+    const trainingStage = ['level1-train-warrior', 'level2-train-archer', 'level2-complete'].includes(stage);
+    configure('#train-warrior', Boolean(barracksOpen && trainingStage && this.state.level >= 1), Boolean(this.controlsEnabled));
+    configure('#train-archer', Boolean(barracksOpen && trainingStage && this.state.level >= 2), Boolean(this.controlsEnabled));
   }
 
   private addResource(key: ResourceKey, amount: number, persist = true): void {
@@ -1505,6 +1578,9 @@ export class GameScene extends Phaser.Scene {
     }
     if (stage === 'fight-boss') target = this.selectedUnit?.id === 'lac-long-quan' ? this.boss?.container ?? null : this.units.get('lac-long-quan')?.container ?? null;
     if (stage === 'level1-drought') target = this.units.get('than-nong')?.container ?? null;
+    if ((stage === 'level1-train-warrior' || stage === 'level2-train-archer') && this.selectedBuilding?.data.type !== 'barracks') {
+      target = this.buildings.find((building) => building.data.type === 'barracks')?.container ?? null;
+    }
     if (stage === 'level2-conquest') {
       const warrior = [...this.units.values()].find((unit) => unit.id.startsWith('lac-quan'));
       target = this.selectedUnit?.id.startsWith('lac-quan') ? this.tribeChief?.container ?? null : warrior?.container ?? null;

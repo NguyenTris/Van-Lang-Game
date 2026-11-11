@@ -1,7 +1,7 @@
 {
   "name": "van-lang-game",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Văn Lang: Dấu Son Hồng Hoang — RTS web lấy cảm hứng từ thời đại Hùng Vương.",
   "type": "module",
   "scripts": {

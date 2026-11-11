@@ -26,10 +26,12 @@ Kỳ vọng: tất cả lệnh exit code 0, output có `dist/index.html`.
 11. Nhận 500 Vàng; bước vào Level 1 và xác nhận nhận Thần Nông cùng vật tư khởi nghiệp.
 12. Xây Ruộng Lúa; hạn hán phải làm ruộng đổi màu và dừng sản xuất.
 13. Dùng Gọi Mưa; kiểm tra ruộng cộng đúng 3 Lúa/2 giây và hiện +15 sau 10 giây.
-14. Thu thêm Gỗ, dựng Trại Lạc Quân và huấn luyện Chiến binh Rìu Đồng.
-15. Sang Level 2, huấn luyện Xạ thủ; fog tại Vũ Ninh phải tan.
-16. Chọn một trong hai nhánh: kết minh trừ đúng cống vật hoặc chinh phạt bằng Lạc Quân.
-17. F5 và kiểm tra level, công trình, quân đã huấn luyện, lựa chọn bộ lạc và tài nguyên còn nguyên.
+14. Thu thêm Gỗ và dựng Trại Lạc Quân. Sau khi hoàn tất, trại phải tự được chọn và hiện nút Chiến binh Rìu Đồng.
+15. Chọn một unit khác rồi click lại Trại Lạc Quân; bảng huấn luyện phải mở lại. Huấn luyện Rìu Đồng phải trừ 60 Lúa + 20 Đồng và sinh quân sau 2,2 giây.
+16. Khi thiếu tài nguyên hoặc đầy dân số, nút vẫn nhận click và hiện toast giải thích thay vì im lặng.
+17. Sang Level 2, mở lại Trại và huấn luyện Xạ thủ; fog tại Vũ Ninh phải tan.
+18. Chọn một trong hai nhánh: kết minh trừ đúng cống vật hoặc chinh phạt bằng Lạc Quân.
+19. F5 và kiểm tra level, công trình, quân đã huấn luyện, lựa chọn bộ lạc và tài nguyên còn nguyên.
 
 ## Edge cases
 
