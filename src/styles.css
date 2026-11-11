@@ -120,12 +120,17 @@ body.game-active .game-shell { visibility: visible; opacity: 1; }
 .health { width: 100%; height: 3px; background: #2c2d26; }
 .health i { display: block; width: 100%; height: 100%; background: linear-gradient(90deg, #7ba54d, #a9c866); }
 
-.action-panel { position: absolute; z-index: 4; right: 17px; bottom: 47px; width: 318px; padding: 11px; border: 1px solid var(--line); background: var(--panel); box-shadow: 0 13px 32px rgba(0,0,0,.25); }
+.action-panel { position: absolute; z-index: 4; right: 17px; bottom: 47px; width: 358px; padding: 11px; border: 1px solid var(--line); background: var(--panel); box-shadow: 0 13px 32px rgba(0,0,0,.25); }
 .action-panel__heading { display: flex; justify-content: space-between; margin-bottom: 8px; color: #c3a264; font-size: 7px; font-weight: 800; letter-spacing: .15em; }
 .action-panel__heading small { color: #78867a; font-size: 7px; }
 .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .action-card { position: relative; display: flex; align-items: center; gap: 8px; min-height: 50px; padding: 6px; border: 1px solid rgba(218,183,106,.18); background: linear-gradient(135deg, rgba(39,58,44,.9), rgba(20,34,27,.9)); color: #e9ddc2; text-align: left; cursor: pointer; }
+.action-card[hidden] { display: none; }
 .action-card:disabled { opacity: .35; cursor: not-allowed; filter: grayscale(.7); }
+.action-card--skill { border-color: rgba(105,174,187,.36); background: linear-gradient(135deg, rgba(37,82,84,.94), rgba(18,42,40,.94)); }
+.action-card--skill .action-card__art { color: #8bd4d5; }
+.action-grid.is-campaign .action-card { min-height: 47px; }
+.action-grid.is-campaign .action-card--upgrade { grid-column: auto; }
 .action-card:not(:disabled):hover { border-color: rgba(230,190,98,.65); background: linear-gradient(135deg, rgba(75,82,50,.96), rgba(31,49,37,.96)); }
 .action-card__art { display: grid; place-items: center; width: 37px; height: 37px; background: rgba(7,18,14,.55); color: #d3aa58; font-size: 21px; }
 .action-card > span:nth-child(2) { display: grid; gap: 4px; }

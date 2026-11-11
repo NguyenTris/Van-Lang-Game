@@ -94,6 +94,21 @@ export function renderApp(saved: SaveState | null): void {
           <button id="upgrade-era" class="action-card action-card--upgrade" disabled>
             <span class="action-card__art">✦</span><span><b>Lên đời</b><small>Hùng Quốc Vương</small></span><kbd>3</kbd>
           </button>
+          <button id="build-field" class="action-card campaign-action" hidden disabled>
+            <span class="action-card__art">≋</span><span><b>Ruộng Lúa Nước</b><small><i>⌁</i> 60 Gỗ · +15 Lúa/10s</small></span>
+          </button>
+          <button id="call-rain" class="action-card campaign-action action-card--skill" hidden disabled>
+            <span class="action-card__art">☂</span><span><b>Thần Nông · Gọi Mưa</b><small>Khôi phục sản xuất ruộng</small></span>
+          </button>
+          <button id="build-barracks" class="action-card campaign-action" hidden disabled>
+            <span class="action-card__art">⚑</span><span><b>Trại Lạc Quân</b><small>80 Gỗ · 40 Đá</small></span>
+          </button>
+          <button id="train-warrior" class="action-card campaign-action" hidden disabled>
+            <span class="action-card__art">⚔</span><span><b>Chiến binh Rìu Đồng</b><small>60 Lúa · 20 Đồng</small></span>
+          </button>
+          <button id="train-archer" class="action-card campaign-action" hidden disabled>
+            <span class="action-card__art">➶</span><span><b>Xạ thủ Nỏ Tre</b><small>40 Lúa · 40 Gỗ</small></span>
+          </button>
         </div>
       </section>
 

@@ -2,7 +2,7 @@
 
 > Web RTS lấy cảm hứng từ thời đại Hùng Vương, văn hóa lúa nước và kho tàng huyền sử Việt Nam.
 
-**Trạng thái:** First Playable / MVP tutorial · **Nền tảng:** Web desktop · **Ngôn ngữ:** Tiếng Việt
+**Trạng thái:** Vertical Slice · Tutorial + Level 1–2 · **Nền tảng:** Web desktop · **Ngôn ngữ:** Tiếng Việt
 
 ![Văn Lang key art](src/assets/van-lang-hero.jpg)
 
@@ -26,8 +26,11 @@ Bản MVP hiện thực hóa trọn vẹn tutorial mở đầu trong hồ sơ d�
 8. Xây **Lều Trưởng Bản**, lên đời **Hùng Quốc Vương** và nhận 500 Vàng.
 9. HUD tài nguyên, dân số, nhiệm vụ, minimap, fullscreen, âm thanh tổng hợp.
 10. Autosave 30 giây/lần, khôi phục sau F5, PWA shell và offline cache.
-11. Điểm tích hợp “Đàn Tế” mô phỏng luồng rewarded-ad an toàn; chưa gọi mạng quảng cáo thật.
-12. Pipeline build/deploy tự động lên GitHub Pages bằng GitHub Actions.
+11. **Level 1 – Hùng Quốc Vương:** Thần Nông, Ruộng Lúa Nước sản xuất tự động, hạn hán, kỹ năng Gọi Mưa, Trại Lạc Quân và Chiến binh Rìu Đồng.
+12. **Level 2 – Hùng Hy Vương:** Lạc Hầu, Xạ thủ Nỏ Tre, fog of war và bộ lạc Vũ Ninh với hai lựa chọn kết minh/chinh phạt.
+13. Hệ thống sản xuất tài nguyên theo thời gian, huấn luyện và lưu trạng thái quân đội.
+14. Điểm tích hợp “Đàn Tế” mô phỏng luồng rewarded-ad an toàn; chưa gọi mạng quảng cáo thật.
+15. Pipeline build/deploy tự động lên GitHub Pages bằng GitHub Actions.
 
 ## Điều khiển
 

@@ -40,7 +40,11 @@ interface SaveState {
   populationCap: number;
   tutorialStage: TutorialStage;
   buildings: SavedBuilding[];
+  trainedUnits: SavedUnit[];
   originGiftClaimed: boolean;
+  campaignStarted: boolean;
+  droughtResolved: boolean;
+  tribeOutcome: 'none' | 'diplomacy' | 'conquest';
   savedAt: number;
 }
 ```

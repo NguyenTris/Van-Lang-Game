@@ -79,12 +79,13 @@ State gồm tài nguyên, dân số, tutorial stage, level, công trình và tr�
 
 ## 5. Roadmap nội dung
 
-### Milestone A — Vertical slice Level 1–2
+### Milestone A — Vertical slice Level 1–2 ✅
 
-- Ruộng Lúa Nước và production tick.
-- Lạc Dân thực sự khai thác theo chu kỳ.
-- Trại Lạc Quân, Chiến binh Rìu Đồng, Xạ thủ Nỏ Tre.
-- Fog of war, pathfinding trên grid, một bộ lạc trung lập.
+- **Level 1 – Hùng Quốc Vương:** Ruộng Lúa Nước sản xuất 15 Lúa/10 giây, Thần Nông, biến cố hạn hán và kỹ năng Gọi Mưa.
+- Trại Lạc Quân, huấn luyện Chiến binh Rìu Đồng và lưu đội quân vào IndexedDB.
+- **Level 2 – Hùng Hy Vương:** Lạc Hầu, Xạ thủ Nỏ Tre, vùng fog of war và bộ lạc Vũ Ninh.
+- Hai nhánh quyết sách: kết minh bằng cống vật hoặc điều Lạc Quân chinh phạt thủ lĩnh.
+- Resource gathering tự do sau tutorial và production tick hoạt động xuyên suốt chiến dịch.
 
 ### Milestone B — Level 3–6
 
